@@ -172,3 +172,36 @@ file is the CI scanner matching its own pattern. Commit f6b68a5 was pushed, GitH
 (worker=0); `CLOUD_POLLING_ENABLED` remains false. No cutover, payment, resource, DNS,
 secret or database mutation occurred beyond the approved verified backups and isolated
 preflights. Exact next gate is the owner's real OIDC/admin session at the laptop.
+
+## 2026-09-06 — Student OS v0.1 invited-beta cloud cutover
+
+The owner completed the final coordinated Telegram bot-token rotation through BotFather
+and saved the replacement directly into both existing Doppler stg configs. No credential
+value was read, printed, copied through browser automation or committed. Runtime presence,
+Bot imports and shared PostgreSQL access passed; Core signed health/catalog and all bridge
+authentication-negative checks remained green. The pre-cutover outbox was empty of pending
+delivery (`pending=0`, `delivered=1`).
+
+Fresh recovery points were verified before stopping anything: local SQLite backup
+`20260906T024353Z` passed hash/integrity verification and Heroku PostgreSQL backup `b002`
+completed. The local cutover controller then stopped the legacy bot and proved zero
+supervisors, bot processes and lock listeners after a delayed recheck. The expected
+`StudentAIBot` Scheduled Task was already absent; audit also found no matching Windows
+service, Registry Run entry, Startup-folder item or WMI event subscription. Nothing was
+deleted, and no reboot/logon autorestart path remained active.
+
+After the owner enabled `CLOUD_POLLING_ENABLED` in the existing Doppler Bot config and its
+Heroku sync applied, the app was scaled from zero to one Eco worker. Heroku reports one
+`worker.1`; production logs contain exactly one `CLOUD_POLLING_LEASE_ACQUIRED` marker and
+no current Telegram conflict, traceback or error signal. The owner confirmed successful
+smoke for `/start`, `/balance`, normal text analysis, `Как защитить` and `/buy`. A real
+Telegram Stars charge was intentionally not submitted. Post-smoke aggregate outbox remains
+`pending=0`, `delivered=1`, and Core health remains `ok`.
+
+Final local validation: compile plus 98 Bot tests passed with four expected skips. The Core
+suite and frontend runtimes passed separately (121 passed, 31 expected skips). Tracked-file
+secret-shape scans found no credential-shaped value. Rollback remains cloud-first:
+`worker=0`, polling latch false, confirm lease/polling stopped, then restore exactly one
+local process with the cutover controller if required. Owner working-tree changes in
+`app/bot.py`, welcome assets and `outputs/` were preserved and excluded from this release
+checkpoint commit.
