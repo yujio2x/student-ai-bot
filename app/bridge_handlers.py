@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Update
@@ -27,16 +28,40 @@ def balance_text(entitlement: dict) -> str:
     return f"Бесплатный разбор: {trial}. Оплаченных разборов: {entitlement['balance']}."
 
 
+def telegram_math(text: str) -> str:
+    """Convert the small LaTeX subset models sometimes emit into safe plain text."""
+    value = str(text or "").replace("\\(", "").replace("\\)", "").replace("\\[", "").replace("\\]", "")
+    previous = None
+    while previous != value:
+        previous = value
+        value = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1)/(\2)", value)
+        value = re.sub(r"\\sqrt\{([^{}]+)\}", r"√(\1)", value)
+    replacements = {r"\\pi": "π", r"\\cdot": "·", r"\\times": "×", r"\\pm": "±",
+                    r"\\leq": "≤", r"\\geq": "≥", r"\\neq": "≠", r"\\infty": "∞"}
+    for source, target in replacements.items():
+        value = value.replace(source, target)
+    superscripts = str.maketrans("0123456789+-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
+    value = re.sub(r"\^\{?([0-9+\-]+)\}?", lambda match: match.group(1).translate(superscripts), value)
+    return value.replace("{", "").replace("}", "").replace("\\", "").strip()
+
+
 def render_result(result: dict, *, defense: bool = False) -> str:
-    fields = (("Как защитить", "how_to_defend"), ("Вопросы преподавателя", "defense_questions"),
-              ("Возможные ошибки", "pitfalls")) if defense else (
-        ("Понимание задания", "analysis"), ("Решение / объяснение", "explanation"),
-        ("Подход", "approach"), ("Проверка", "checks"))
+    if defense:
+        fields = (("Как защитить", "defense_points"),)
+        if not result.get("defense_points"):
+            fields = (("Как защитить", "how_to_defend"),)
+    else:
+        fields = (("Решение", "solution"), ("Ответ", "answer"),
+                  ("Проверка", "optional_check"))
+        if not result.get("solution"):
+            fields = (("Решение", "explanation"), ("Проверка", "checks"))
     sections = []
     for title, key in fields:
         value = result.get(key, "")
         if isinstance(value, list):
-            value = "\n".join(f"• {item}" for item in value)
+            value = "\n".join(f"• {telegram_math(item)}" for item in value)
+        else:
+            value = telegram_math(value)
         if value:
             sections.append(f"{title}\n{value}")
     return "\n\n".join(sections)[:60000] or "Раздел отсутствует в ответе."
@@ -67,6 +92,19 @@ async def send_result(message, context, result, defense_key):
         [InlineKeyboardButton("👍", callback_data=f"corefb:{defense_key}:positive"),
          InlineKeyboardButton("👎", callback_data=f"corefb:{defense_key}:negative")]])
     await send_plain(message, render_result(result), keyboard)
+
+
+def claim_ai_delivery(context, key: str) -> bool:
+    """Suppress duplicate Telegram updates and uncertain resend attempts in one worker."""
+    deliveries = context.application.bot_data.setdefault("core_ai_deliveries", {})
+    now = time.time()
+    for old_key, expires in list(deliveries.items()):
+        if expires <= now:
+            deliveries.pop(old_key, None)
+    if key in deliveries:
+        return False
+    deliveries[key] = now + 86400
+    return True
 
 
 async def retry_loop(application):
@@ -223,13 +261,15 @@ async def dispatch(update: Update, context):
                 await message.reply_text("Пришли условие длиной от 3 до 6000 символов.")
             else:
                 key = f"telegram:{user['telegram_user_id']}:{update.effective_chat.id}:{message.message_id}"
+                if not claim_ai_delivery(context, key):
+                    raise ApplicationHandlerStop
                 result = (await asyncio.to_thread(client.submit_text_task, user, text, key))["result"]
                 await send_result(message, context, result, str(message.message_id))
         else:
             return
     except BridgeError as exc:
-        if message:
-            await message.reply_text({402: "Попытки закончились. Купить: /buy", 409: "Этот запрос уже принят. Повторно попытка не списана."}.get(exc.status, UNAVAILABLE))
+        if message and exc.status != 409:
+            await message.reply_text({402: "Попытки закончились. Купить: /buy"}.get(exc.status, UNAVAILABLE))
     except (KeyError, TypeError, ValueError):
         logger.error("Invalid bridge contract or conflicting payment; review required")
         if message:

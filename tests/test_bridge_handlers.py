@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 from telegram.ext import ApplicationHandlerStop
 from app.bridge_client import BridgeError
-from app.bridge_handlers import dispatch, install, render_result
+from app.bridge_handlers import dispatch, install, render_result, telegram_math
 from app.payment_outbox import PaymentOutbox
 
 
@@ -86,6 +86,48 @@ class HandlersTest(unittest.IsolatedAsyncioTestCase):
         result = render_result({"explanation": "Ә <script> 😀" * 10000})
         self.assertLessEqual(len(result), 60000)
         self.assertIn("Ә", result)
+
+    def test_compact_formatter_uses_russian_sections_and_unicode_math(self):
+        result = render_result({
+            "solution": r"r=\\sqrt{21+7}=2\\sqrt{7}",
+            "answer": r"z=2\\sqrt{7}(\\cos(\\pi/6)+i\\sin(\\pi/6))",
+            "optional_check": None,
+        })
+        self.assertIn("Решение", result)
+        self.assertIn("Ответ", result)
+        self.assertIn("√", result)
+        self.assertIn("π/6", result)
+        for raw in (r"\\(", r"\\)", r"\\frac", r"\\sqrt"):
+            self.assertNotIn(raw, result)
+
+    def test_plain_math_handles_fraction_superscripts_and_markup_characters(self):
+        value = telegram_math(r"\\frac{a_b}{2} + x^{2} < y & z")
+        self.assertEqual(value, "(a_b)/(2) + x² < y & z")
+
+    async def test_duplicate_update_has_one_core_call_and_one_visible_result(self):
+        self.client.submit_text_task.return_value = {"result": {
+            "solution": "x = 1", "answer": "1", "defense_points": ["Подстановка"]}}
+        await self.run_dispatch()
+        await self.run_dispatch()
+        self.client.submit_text_task.assert_called_once()
+        self.assertEqual(self.message.reply_text.await_count, 1)
+
+    async def test_core_conflict_does_not_emit_a_second_visible_result(self):
+        self.client.submit_text_task.side_effect = BridgeError(409)
+        await self.run_dispatch()
+        self.assertEqual(self.message.reply_text.await_count, 0)
+
+    async def test_uncertain_send_timeout_is_not_retried_as_a_second_message(self):
+        self.client.submit_text_task.return_value = {"result": {
+            "solution": "r=2", "answer": "2(cos(π/2)+i sin(π/2))",
+            "defense_points": ["Модуль равен 2."]}}
+        self.message.reply_text.side_effect = TimeoutError("synthetic send timeout")
+        with self.assertRaises(TimeoutError):
+            await dispatch(self.update, self.context)
+        self.message.reply_text.side_effect = None
+        await self.run_dispatch()
+        self.client.submit_text_task.assert_called_once()
+        self.assertEqual(self.message.reply_text.await_count, 1)
 
     async def test_photo_quote_confirm_selection_share_core(self):
         self.message.photo = [SimpleNamespace(file_size=100, file_id="fixture")]

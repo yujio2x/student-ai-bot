@@ -205,3 +205,24 @@ secret-shape scans found no credential-shaped value. Rollback remains cloud-firs
 local process with the cutover controller if required. Owner working-tree changes in
 `app/bot.py`, welcome assets and `outputs/` were preserved and excluded from this release
 checkpoint commit.
+
+## 2026-09-09 — Compact shared-result Telegram presentation
+
+The bridge adapter now presents the new Core semantic contract as `Решение`, `Ответ`, an
+optional useful check, and a separately cached `Как защитить` list. A narrow plain-text
+math normalizer converts common model LaTeX (`\\frac`, `\\sqrt`, `\\pi`, powers and
+delimiters) to readable Unicode without enabling Telegram markup parsing. Literal markup
+characters and Kazakh/Russian Unicode therefore remain safe.
+
+The delivery audit confirmed Core already prevents duplicate generation and charging by
+stable `request_id`. The missing adapter boundary was a delivery claim: duplicate updates
+could re-enter transport, and Core replay conflict 409 produced a second visible status.
+A bounded 24-hour in-worker claim now suppresses duplicate updates and uncertain send
+retries, while 409 is silent. Regression covers one logical call/result, new-context Core
+replay, uncertain send timeout, Unicode math and the legacy result fallback. Billing,
+entitlements, payments, auth and cutover topology were not changed.
+
+Validation passed the complete 102-test Bot suite with four expected PostgreSQL skips,
+then the final focused adapter suite passed 12 tests including the uncertain-send case.
+Python compile, diff checks and tracked-file credential-pattern scans passed. The Core
+suite passed 139 tests with 31 expected environment skips.
