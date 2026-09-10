@@ -226,3 +226,17 @@ Validation passed the complete 102-test Bot suite with four expected PostgreSQL 
 then the final focused adapter suite passed 12 tests including the uncertain-send case.
 Python compile, diff checks and tracked-file credential-pattern scans passed. The Core
 suite passed 139 tests with 31 expected environment skips.
+
+## 2026-09-10 — Compact response production rollout
+
+GitHub Actions completed successfully for Bot commit `b49ffc4` and compatible Core
+commit `8981ee5`. Core was deployed first and returned health `ok`; Bot was then released
+as Heroku v19 without changing its Eco formation, billing, entitlement or payment rules.
+The post-release worker restarted cleanly, changed to `up` and acquired exactly one cloud
+polling lease.
+
+One owner-run Telegram smoke, `Convert 2i to polar form.`, produced one compact Russian
+response structured as `Решение`, `Ответ` and a useful optional `Проверка`. Mathematical
+notation used readable `π` with no raw LaTeX delimiters. Pressing `Как защитить` produced
+the cached defense response exactly once; it was an explicit button action, not a replay
+or duplicate delivery. No additional AI benchmark or real payment was performed.
