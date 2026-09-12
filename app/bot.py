@@ -112,6 +112,10 @@ def split_message(text: str, limit: int = 4000) -> list[str]:
     return parts
 
 
+_ORDINAL_STEMS = r"(?:перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят)"
+_TASK_NOUNS = r"(?:задач|пункт|номер|вопрос|пример|вариант|задани|тест)"
+
+
 def is_photo_followup(text: str) -> bool:
     """Recognize clear references to tasks from the current photo session."""
     normalized = text.casefold().strip()
@@ -121,7 +125,16 @@ def is_photo_followup(text: str) -> bool:
         r"\bпункт[а-я]*\s*(?:№\s*)?\d+",
         r"\bномер[а-я]*\s*\d+",
         r"\b(?:реши|решить|разбери|разобрать|объясни|сделай)\s+(?:задач[а-я]*\s*)?\d+",
-        r"\b(?:перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят)[а-я]*\b",
+        # A bare ordinal anywhere in the text would hijack new paid tasks like
+        # "второй закон Ньютона" into the free photo flow, so require context:
+        # a task noun, a task verb at the end, or a standalone short reply.
+        rf"\b{_TASK_NOUNS}[а-я]*\s+(?:№\s*)?{_ORDINAL_STEMS}[а-я]*\b",
+        rf"\b{_ORDINAL_STEMS}[а-я]*\s+{_TASK_NOUNS}[а-я]*\b",
+        rf"\b(?:реши|решить|разбери|разобрать|объясни|объяснить|проверь|перепроверь|сделай|покажи)"
+        rf"\s+(?:мне\s+)?(?:ещё\s+)?(?:задач[а-я]*\s+)?(?:№\s*)?{_ORDINAL_STEMS}[а-я]*"
+        rf"(?:\s+и\s+{_ORDINAL_STEMS}[а-я]*)?"
+        rf"(?:\s+(?:подробнее|попроще|ещё|снова|пожалуйста|полностью|сначала))*[.!,?\s]*$",
+        rf"^(?:ну\s+)?(?!вторник\b|пятница\b){_ORDINAL_STEMS}[а-я]*(?:\s+и\s+\S+)?[.!,?\s]*$",
         r"\b(?:продолж|подробн|попроще|перепроверь|проверь ещё|объясни ещё)[а-я]*\b",
         r"\b(?:для|к|на)\s+защит[а-я]*\b",
         r"\b(?:все|всё|весь|всю)\s+(?:это|этот|эту|задани[ея]|задач[иу]|тест)\b",
