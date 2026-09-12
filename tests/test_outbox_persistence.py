@@ -80,6 +80,20 @@ class OutboxContract:
         with self.assertRaises(ValueError):
             box.enqueue({**payload(), "stars_paid": 100})
 
+    def test_corrupt_or_foreign_stored_payload_fails_closed_as_value_error(self):
+        box = self.open()
+        box.enqueue(payload())
+        with box._connect() as db:
+            db.execute("UPDATE payment_outbox SET payload=? WHERE charge_id=?",
+                       ('{"legacy": "shape"}', payload()["charge_id"]))
+        with self.assertRaises(ValueError):
+            box.enqueue(payload())
+        with self.assertRaises(ValueError):
+            box.enqueue({"charge_id": "missing-product", "stars_paid": 25,
+                         "telegram": {"telegram_user_id": 1}})
+        with self.assertRaises(ValueError):
+            box.enqueue("not-a-dict")
+
     def test_process_crash_after_enqueue_before_delivery(self):
         env = os.environ.copy()
         env.update(self.child_environment())

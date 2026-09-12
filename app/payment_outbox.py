@@ -32,18 +32,35 @@ class PaymentOutbox:
         finally:
             db.close()
 
+    @staticmethod
+    def _charge_identity(payload: dict) -> tuple:
+        telegram = payload.get("telegram") if isinstance(payload, dict) else None
+        if not isinstance(telegram, dict):
+            raise ValueError("Invalid payment envelope")
+        identity = (payload.get("product_id"), payload.get("stars_paid"), telegram.get("telegram_user_id"))
+        if any(part is None for part in identity):
+            raise ValueError("Invalid payment envelope")
+        return identity
+
     def enqueue(self, payload: dict) -> None:
-        charge = payload["charge_id"]
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid payment envelope")
+        charge = payload.get("charge_id")
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if not isinstance(charge, str) or not 1 <= len(charge) <= 180 or len(encoded) > 4096:
             raise ValueError("Invalid payment envelope")
+        self._charge_identity(payload)
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT payload FROM payment_outbox WHERE charge_id=?", (charge,)).fetchone()
             if old:
-                previous = json.loads(old["payload"])
+                try:
+                    previous = json.loads(old["payload"])
+                    previous_identity = self._charge_identity(previous)
+                except ValueError:
+                    raise ValueError("Conflicting payment charge") from None
                 # Profile names may change between duplicate Telegram updates.
-                if any(previous[k] != payload[k] for k in ("product_id", "stars_paid")) or previous["telegram"]["telegram_user_id"] != payload["telegram"]["telegram_user_id"]:
+                if previous_identity != self._charge_identity(payload):
                     raise ValueError("Conflicting payment charge")
                 return
             db.execute("INSERT INTO payment_outbox(charge_id,payload,created_at) VALUES (?,?,?)",
