@@ -85,6 +85,21 @@ class SplitMessageTest(unittest.TestCase):
         self.assertTrue(is_photo_followup("все"))
         self.assertFalse(is_photo_followup("Привет, сколько стоит бот?"))
 
+    def test_bare_ordinal_requires_task_context(self) -> None:
+        # Short references to the current photo session stay follow-ups.
+        self.assertTrue(is_photo_followup("второй"))
+        self.assertTrue(is_photo_followup("второй и третий"))
+        self.assertTrue(is_photo_followup("вторая задача"))
+        self.assertTrue(is_photo_followup("задача вторая"))
+        self.assertTrue(is_photo_followup("реши первую и вторую"))
+
+    def test_new_task_with_ordinal_word_is_not_hijacked_into_photo_flow(self) -> None:
+        self.assertFalse(is_photo_followup("Объясни второй закон Ньютона"))
+        self.assertFalse(is_photo_followup("Второй закон Ньютона сформулируй и покажи пример"))
+        self.assertFalse(is_photo_followup("Первое начало термодинамики сформулируй"))
+        self.assertFalse(is_photo_followup("пятница"))
+        self.assertFalse(is_photo_followup("вторник"))
+
     def test_feedback_keyboard_contains_compact_callbacks(self) -> None:
         keyboard = feedback_keyboard(123)
         callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
