@@ -31,11 +31,28 @@ class CloudReadinessTest(unittest.TestCase):
         with patch.dict(os.environ, {'CLOUD_POLLING_ENABLED':'true'}, clear=True), \
              patch('app.cloud_worker.load_settings', return_value=settings), \
              patch('app.cloud_worker.build', return_value=application), \
+             patch('app.cloud_worker.require_no_webhook', new=unittest.mock.AsyncMock()), \
              patch('app.observability.initialize'), \
              lease as mocked_lease:
             main()
         mocked_lease.assert_called_once_with('postgresql://example')
         self.assertEqual(calls, [{'allowed_updates': __import__('telegram').Update.ALL_TYPES}])
+
+    def test_webhook_mode_blocks_polling_before_settings(self):
+        with patch.dict(os.environ, {'CLOUD_POLLING_ENABLED':'true',
+                                    'TELEGRAM_DELIVERY_MODE':'webhook'}, clear=True), \
+             patch('app.cloud_worker.load_settings') as load:
+            with self.assertRaisesRegex(RuntimeError, 'webhook delivery mode'):
+                main()
+            load.assert_not_called()
+
+    def test_registered_webhook_is_never_deleted_by_polling(self):
+        from app.cloud_worker import require_no_webhook
+        bot = unittest.mock.AsyncMock()
+        bot.get_webhook_info.return_value = SimpleNamespace(url='https://example.invalid/webhook')
+        with self.assertRaisesRegex(RuntimeError, 'Webhook exists'):
+            __import__('asyncio').run(require_no_webhook(SimpleNamespace(bot=bot)))
+        bot.delete_webhook.assert_not_called()
 
     def test_polling_lease_rejects_second_worker_and_releases_first(self):
         connection = unittest.mock.Mock()

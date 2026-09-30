@@ -81,6 +81,8 @@ def build(settings):
 
 def main():
     # Independent of formation=0: accidental scaling must still not start polling.
+    if os.getenv("TELEGRAM_DELIVERY_MODE", "polling").lower() != "polling":
+        raise RuntimeError("Cloud polling forbidden in webhook delivery mode")
     if os.getenv("CLOUD_POLLING_ENABLED", "false").lower() != "true":
         raise RuntimeError("Cloud polling disabled until explicit live cutover")
     from app.observability import initialize
@@ -88,7 +90,23 @@ def main():
     settings = load_settings()
     with polling_lease(settings.outbox_database_url):
         print("CLOUD_POLLING_LEASE_ACQUIRED", flush=True)
-        build(settings).run_polling(allowed_updates=Update.ALL_TYPES)
+        application = build(settings)
+        # run_polling otherwise deletes an existing webhook automatically.
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(require_no_webhook(application))
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+        finally:
+            if not loop.is_closed():
+                loop.close()
+
+
+async def require_no_webhook(application):
+    async with application.bot:
+        info = await application.bot.get_webhook_info()
+        if info.url:
+            raise RuntimeError("Webhook exists; refusing to delete it or start polling")
 
 
 if __name__ == "__main__":

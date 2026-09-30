@@ -9,3 +9,4 @@ data/*.db-wal
 .pytest_cache/
 logs/
 backups/
+.test-tmp/

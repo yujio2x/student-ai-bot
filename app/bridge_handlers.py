@@ -96,6 +96,9 @@ async def send_result(message, context, result, defense_key):
 
 def claim_ai_delivery(context, key: str) -> bool:
     """Suppress duplicate Telegram updates and uncertain resend attempts in one worker."""
+    if context.application.bot_data.get("durable_delivery"):
+        # Webhook runtime owns persisted update/effect fences across restarts.
+        return True
     deliveries = context.application.bot_data.setdefault("core_ai_deliveries", {})
     now = time.time()
     for old_key, expires in list(deliveries.items()):
@@ -192,7 +195,13 @@ async def dispatch(update: Update, context):
                 if not pending or pending["expires"] <= time.time() or pending["quote_id"] != action[10:]:
                     await message.reply_text("Подтверждение истекло. Пришли фото снова.")
                 else:
-                    session = await asyncio.to_thread(client.confirm_photo, user, pending["data"], "image/jpeg", pending["quote_id"])
+                    raw = pending.get("data")
+                    if raw is None:
+                        file = await context.bot.get_file(pending["file_id"])
+                        raw = bytes(await file.download_as_bytearray())
+                        if len(raw) > 6 * 1024 * 1024:
+                            raise ValueError("Photo exceeds limit")
+                    session = await asyncio.to_thread(client.confirm_photo, user, raw, "image/jpeg", pending["quote_id"])
                     context.user_data["core_photo_session"] = session
                     prefix = f"coreselect:{session['session_id']}:"
                     buttons = [[InlineKeyboardButton("Все задачи", callback_data=prefix + "all")]]
@@ -245,7 +254,9 @@ async def dispatch(update: Update, context):
                     await message.reply_text("Пришли фото до 6 МБ. Попытка не списана.")
                 else:
                     quote = await asyncio.to_thread(client.quote_photo, user, raw, "image/jpeg")
-                    pending = {**quote, "data": raw, "expires": time.time() + 300}
+                    # File reference can survive a webhook process restart without
+                    # persisting raw image bytes. Re-download on confirmation.
+                    pending = {**quote, "file_id": photo.file_id, "expires": time.time() + 300}
                     context.user_data["core_pending_photo"] = pending
                     quote_id = quote["quote_id"]
                     def expire():

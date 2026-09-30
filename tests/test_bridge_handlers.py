@@ -135,6 +135,9 @@ class HandlersTest(unittest.IsolatedAsyncioTestCase):
         self.client.quote_photo.return_value = {"quote_id": "synthetic-quote-id", "uses_trial": True, "credits": 0, "can_confirm": True}
         await self.run_dispatch()
         self.client.confirm_photo.assert_not_called()
+        self.assertNotIn("data", self.context.user_data["core_pending_photo"])
+        # JSON round-trip simulates persisted webhook context after restart.
+        self.context.user_data = __import__('json').loads(__import__('json').dumps(self.context.user_data))
         self.message.photo = None
         self.update.callback_query = SimpleNamespace(data="corephoto:synthetic-quote-id", answer=AsyncMock(), id="callback-1")
         self.client.confirm_photo.return_value = {"session_id": "synthetic-quote-id", "tasks": ["Задача 1", "Задача 2"], "expires_at": 9999999999}
